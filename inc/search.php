@@ -40,6 +40,100 @@ function ratings_card_search_shortcode_handler($atts) {
     return ob_get_clean();
 }
 
+function ratings_card_search_movies($query, $page = 1) {
+    $query = sanitize_text_field($query);
+
+    if (empty($query)) {
+        return array(
+            'error' => true,
+            'message' => 'Search query cannot be empty.'
+        );
+    }
+
+    $cache_key = 'ratings_card_search_' . md5($query . '_' . $page);
+
+    $cached = get_transient($cache_key);
+    if ($cached !== false) {
+        return $cached;
+    }
+
+    $tmdb_api_key = get_option('ratings_card_tmdb_api_key', '');
+
+    if (empty($tmdb_api_key)) {
+        return array(
+            'error' => true,
+            'message' => 'TMDB API key not configured. Please set it in Settings → Ratings Card.'
+        );
+    }
+
+    $url = 'https://api.themoviedb.org/3/search/movie?' . http_build_query(array(
+        'api_key' => $tmdb_api_key,
+        'query' => $query,
+        'page' => $page,
+        'include_adult' => 'false'
+    ));
+
+    $response = wp_remote_get($url, array(
+        'timeout' => 15,
+        'headers' => array(
+            'Accept' => 'application/json'
+        )
+    ));
+
+    if (is_wp_error($response)) {
+        return array(
+            'error' => true,
+            'message' => 'Search request failed: ' . $response->get_error_message()
+        );
+    }
+
+    $http_code = wp_remote_retrieve_response_code($response);
+    if ($http_code !== 200) {
+        return array(
+            'error' => true,
+            'message' => 'Search API returned error code: ' . $http_code
+        );
+    }
+
+    $body = wp_remote_retrieve_body($response);
+    $data = json_decode($body, true);
+
+    if (json_last_error() !== JSON_ERROR_NONE) {
+        return array(
+            'error' => true,
+            'message' => 'Failed to parse search response: ' . json_last_error_msg()
+        );
+    }
+
+    $sanitized_results = array(
+        'page' => isset($data['page']) ? absint($data['page']) : 1,
+        'total_results' => isset($data['total_results']) ? absint($data['total_results']) : 0,
+        'total_pages' => isset($data['total_pages']) ? absint($data['total_pages']) : 0,
+        'results' => array()
+    );
+
+    if (isset($data['results']) && is_array($data['results'])) {
+        foreach ($data['results'] as $movie) {
+            $sanitized_results['results'][] = array(
+                'id' => isset($movie['id']) ? absint($movie['id']) : 0,
+                'title' => isset($movie['title']) ? sanitize_text_field($movie['title']) : '',
+                'original_title' => isset($movie['original_title']) ? sanitize_text_field($movie['original_title']) : '',
+                'overview' => isset($movie['overview']) ? sanitize_textarea_field($movie['overview']) : '',
+                'poster_path' => isset($movie['poster_path']) && $movie['poster_path'] ? 'https://image.tmdb.org/t/p/w500' . sanitize_text_field($movie['poster_path']) : '',
+                'backdrop_path' => isset($movie['backdrop_path']) && $movie['backdrop_path'] ? 'https://image.tmdb.org/t/p/w1280' . sanitize_text_field($movie['backdrop_path']) : '',
+                'release_date' => isset($movie['release_date']) ? sanitize_text_field($movie['release_date']) : '',
+                'vote_average' => isset($movie['vote_average']) ? floatval($movie['vote_average']) : 0,
+                'vote_count' => isset($movie['vote_count']) ? absint($movie['vote_count']) : 0,
+                'popularity' => isset($movie['popularity']) ? floatval($movie['popularity']) : 0
+            );
+        }
+    }
+
+    set_transient($cache_key, $sanitized_results, 3600);
+
+    return $sanitized_results;
+}
+
 function ratings_card_ajax_search() {
     check_ajax_referer('ratings_card_search_nonce', 'nonce');
     
@@ -58,6 +152,7 @@ function ratings_card_ajax_search() {
         ));
     }
     
+    // Fetch search results from the TMDB API.
     $results = ratings_card_search_movies($query, $page);
     
     if (isset($results['error']) && $results['error']) {
