@@ -55,7 +55,6 @@
                     } else {
                         resultsContainer.html(response.data.html);
                     }
-                    attachSearchResultHandlers(container);
                 } else {
                     resultsContainer.html('<div class="search-error">' + response.data.message + '</div>');
                 }
@@ -245,22 +244,6 @@
         return card.outerHTML;
     }
     
-    function attachSearchResultHandlers(container) {
-        container.find('.show-ratings-btn').off('click').on('click', function(e) {
-            e.preventDefault();
-            const movieId = $(this).data('movie-id');
-            const movieTitle = $(this).data('movie-title');
-            loadMovieRatings(movieId, movieTitle, container);
-        });
-        
-        container.find('.load-more-results').off('click').on('click', function(e) {
-            e.preventDefault();
-            const page = $(this).data('page');
-            const query = $(this).data('query');
-            performSearch(query, page, container);
-        });
-    }
-    
     $(document).ready(function() {
         lazyLoadPosters();
         
@@ -293,6 +276,20 @@
                         performSearch(query, 1, container);
                     }, 500);
                 }
+            });
+
+            container.on('click', '.show-ratings-btn', function(e) {
+                e.preventDefault();
+                const movieId = $(this).data('movie-id');
+                const movieTitle = $(this).data('movie-title');
+                loadMovieRatings(movieId, movieTitle, container);
+            });
+
+            container.on('click', '.load-more-results', function(e) {
+                e.preventDefault();
+                const page = $(this).data('page');
+                const query = $(this).data('query');
+                performSearch(query, page, container);
             });
         });
     });
